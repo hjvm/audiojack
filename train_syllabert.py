@@ -21,7 +21,8 @@ def train(args):
     device = get_device()
     # instantiate model: only hubert_pretrained_model arg
     model = SyllaBERT(
-        hubert_pretrained_model=args.hubert_model
+        hubert_pretrained_model=args.hubert_model,
+        num_classes=100  # set to number of clusters
     ).to(device)
 
     # prepare data
@@ -45,8 +46,14 @@ def train(args):
         for inputs, targets_list, segments in loader:
             if inputs is None:
                 continue
+            print("inputs:", inputs.shape)
+            print("targets:", targets_list.shape)
             inputs = inputs.to(device)
-            targets = torch.cat(targets_list).to(device)
+            # 1) flatten to 1D
+            targets_flat = targets_list.to(device).view(-1)
+            # 2) select only the non‐padded entries
+            valid = targets_flat != -100
+            targets = targets_flat[valid]
             # forward returns list of (N_syll, num_classes) logits
             logits_list = model(inputs, args.sr)
             # flatten and compute loss

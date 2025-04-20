@@ -1,9 +1,10 @@
 # syllable_dataset.py
-
 import torch
+import torchaudio
 import json
 import librosa
 from collections import defaultdict
+from findsylls import segment_waveform
 
 class SyllableDataset(torch.utils.data.Dataset):
     def __init__(self, manifest_path, samplerate=16000):
@@ -27,16 +28,11 @@ class SyllableDataset(torch.utils.data.Dataset):
         segs = self.utterances[utt_id]
         # load full waveform for that utterance
         path = segs[0]["audio_file"]
-        y, _ = librosa.load(path, sr=self.samplerate)
-        # crop to the span of all segments
-        start = int(min(e["segment_start"] for e in segs) * self.samplerate)
-        end   = int(max(e["segment_end"]   for e in segs) * self.samplerate)
-        wav = y[start:end]
-        wav = torch.from_numpy(wav).float().unsqueeze(0)  # [1, T]
+        y, sr = torchaudio.load(path)
         # collect cluster IDs
         labels = [e.get("cluster_id", -100) for e in segs]
         labels = torch.tensor(labels, dtype=torch.long)   # [S]
-        return wav, labels
+        return y, labels
 
 def collate_syllable_utterances(batch):
     """
