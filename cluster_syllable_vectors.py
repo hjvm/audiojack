@@ -23,16 +23,34 @@ from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vectors_file", required=True, help="Path to .npy file of syllable MFCC vectors")
-    parser.add_argument("--manifest_file", required=True, help="Path to original manifest .jsonl")
-    parser.add_argument("--output_dir", required=True, help="Directory to save k-means model and label outputs")
-    parser.add_argument("--n_clusters", type=int, default=100, help="Number of clusters (default: 100)")
+    parser.add_argument("--vectors_file", 
+                        type=str,
+                        default="data/syllabert_clean100/features/syllable_mfcc_vectors.npy",
+                        #required=True, 
+                        help="Path to .npy file of syllable MFCC vectors"
+                        )
+    parser.add_argument("--manifest_file",
+                        default="data/syllabert_clean100/features/manifest.jsonl", 
+                        type=str,
+                        #required=True, 
+                        help="Path to original manifest .jsonl"
+                        )
+    parser.add_argument("--output_dir", 
+                        type=str,
+                        default="data/syllabert_clean100/clustering",
+                        #required=True,
+                        help="Directory to save k-means model and label outputs")
+    parser.add_argument("--n_clusters", 
+                        type=int, 
+                        default=100, 
+                        help="Number of clusters (default: 100)")
     args = parser.parse_args()
 
     # Load MFCC vectors
     print(f"Loading MFCC vectors from {args.vectors_file}...")
-    vectors = np.load(args.vectors_file)  # shape: (N, 13)
-
+    vectors = np.load(args.vectors_file)  # shape: (N, 39)
+    print(f"Loaded MFCC vectors shape: {vectors.shape}")
+    
     # Run k-means
     print(f"Running k-means with k={args.n_clusters} on {vectors.shape[0]} syllable vectors...")
     kmeans = KMeans(n_clusters=args.n_clusters, random_state=42, n_init="auto")

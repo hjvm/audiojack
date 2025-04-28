@@ -11,10 +11,12 @@ from tqdm import tqdm
 from findsylls import segment_audio  # assumes your segmentation function is imported from findsylls.py
 
 def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13):
-    base = os.path.splitext(os.path.basename(audio_file))[0]
-    speaker_id = audio_file.split("/")[-3]
-    chapter_id = audio_file.split("/")[-2]
-    utterance_id = f"{speaker_id}-{chapter_id}-{base}"
+    utterance_id = os.path.splitext(os.path.basename(audio_file))[0]
+    #speaker_id = audio_file.split("/")[-3]
+    #chapter_id = audio_file.split("/")[-2]
+    #utterance_id = f"{speaker_id}-{chapter_id}-{base}"
+    n_fft = int(0.025 * samplerate)  # 25 ms window
+    hop_length = int(0.01 * samplerate)  # 10 ms hop
 
     try:
         syllables, t, A = segment_audio(audio_file, samplerate=samplerate, show_plots=False)
@@ -33,11 +35,29 @@ def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13
         duration = (end - start)
 
         if len(syll) < int(0.025 * sr):  # skip segments shorter than 25 ms
+            print(f"Skipping segment {idx} in {audio_file} due to short duration: {duration:.3f}s")
             continue
 
-        mfcc = librosa.feature.mfcc(y=syll, sr=sr, n_mfcc=n_mfcc)
-        mfcc_mean = mfcc.mean(axis=1)  # shape: (n_mfcc,)
-
+        # compute static 13-dim MFCCs
+        mfcc_raw   = librosa.feature.mfcc(
+                        y=syll, sr=sr,
+                        n_mfcc=n_mfcc,
+                        n_fft=n_fft,
+                        hop_length=hop_length
+                    )  # shape (n_mfcc, T)
+        # adapt delta width to segment length
+        n_frames = mfcc_raw.shape[1]
+        # desired window length for delta: default 9, but must be <= n_frames
+        default_width = 9
+        if n_frames < default_width:
+            width = n_frames if (n_frames % 2 == 1) else max(n_frames - 1, 1)
+        else:
+            width = default_width
+        mfcc_delta  = librosa.feature.delta(mfcc_raw, order=1, width=width)
+        mfcc_delta2 = librosa.feature.delta(mfcc_raw, order=2, width=width)        # stack to (3*n_mfcc, T) = (39, T) when n_mfcc=13
+        mfcc_all = np.vstack([mfcc_raw, mfcc_delta, mfcc_delta2])
+        # mean over time axis → (3*n_mfcc,)
+        mfcc_mean = mfcc_all.mean(axis=1)
         mfcc_vectors.append(mfcc_mean)
 
         vectors_info.append({
@@ -54,11 +74,21 @@ def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--librispeech_root", required=True, help="Path to LibriSpeech split root")
-    parser.add_argument("--output_dir", required=True, help="Directory to save MFCC numpy files")
-    parser.add_argument("--manifest_file", required=True, help="Path to output manifest file (JSONL)")
-    parser.add_argument("--n_mfcc", type=int, default=13, help="Number of MFCC coefficients")
-    parser.add_argument("--samplerate", type=int, default=16000, help="Sampling rate")
+    parser.add_argument("--librispeech_root", type=str,
+                         default="data/LibriSpeech/train-clean-100",
+                         help="Path to LibriSpeech split root")
+    parser.add_argument("--output_dir", type=str,
+                        default="data/syllabert_clean100/features",
+                        help="Directory to save MFCC numpy files")
+    parser.add_argument("--manifest_file", type=str,
+                        default="data/syllabert_clean100/features/manifest.jsonl",
+                        help="Path to output manifest file (JSONL)")
+    parser.add_argument("--n_mfcc", type=int, 
+                        default=13, 
+                        help="Number of MFCC coefficients")
+    parser.add_argument("--samplerate", type=int, 
+                        default=16000, 
+                        help="Sampling rate")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)

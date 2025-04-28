@@ -25,7 +25,7 @@ class SyllaBERTEncoder(nn.Module):
         # Final projection to cluster logits
         self.projection = nn.Linear(self.hubert.config.hidden_size, out_dim)
 
-    def forward(self, waveforms: torch.Tensor, sampling_rate: int = 16000):
+    def forward(self, waveforms: torch.Tensor, sampling_rate: int = 16000, hidden_layer: int = None):
         """
         Args:
             waveforms: Tensor of shape (B, 1, T_samples)
@@ -47,9 +47,13 @@ class SyllaBERTEncoder(nn.Module):
             sylls, _, _ = segment_waveform(wav_np, sampling_rate)
             segments = []
             for start_s, _, end_s in sylls:
-                s_fr = int(start_s * sampling_rate / self.conv_stride)
-                e_fr = int(end_s * sampling_rate / self.conv_stride)
-                segments.append((max(0, s_fr), min(T_frames, max(s_fr+1, e_fr))))
+                s_fr = np.floor(start_s * sampling_rate / self.conv_stride)
+                e_fr = np.ceil (end_s   * sampling_rate / self.conv_stride)
+
+                # clamp to [0, T_frames] and guarantee at least 1 frame
+                s_fr = int(max(0, min(s_fr, T_frames - 1)))
+                e_fr = int(max(s_fr + 1, min(e_fr, T_frames)))
+                segments.append((s_fr, e_fr))
             if not segments:
                 reps = feats[b].mean(dim=0, keepdim=True)  # (1, C)
             else:
@@ -59,23 +63,36 @@ class SyllaBERTEncoder(nn.Module):
         max_syll = max(p.size(0) for p in pooled)
         hidden_size = feats.size(2)
         padded = torch.zeros(B, max_syll, hidden_size, device=device)
-        mask = torch.ones(B, max_syll, dtype=torch.bool, device=device)
+        padding_mask = torch.ones(B, max_syll, dtype=torch.bool, device=device)
         for b, reps in enumerate(pooled):
             L = reps.size(0)
             padded[b, :L] = reps
-            mask[b, :L] = False
-                        # 4) Project pooled conv features to hidden dim
+            padding_mask[b, :L] = False
+        # 4) Project pooled conv features to hidden dim
         proj = self.hubert.feature_projection(padded)  # (B, max_syll, hidden_size)
         # 5) Build attention mask: 1 for keep, 0 for pad
-        attention_mask = (~mask).long()
-        # 6) Run HuBERT encoder on syllable embeddings
-        encoder_output = self.transformer(proj, attention_mask=attention_mask)
-        x = encoder_output.last_hidden_state        # (B, max_syll, hidden_size)
+        attention_mask = (~padding_mask) # dtype=torch.bool
+
+        # 6) Configure transformer kwargs
+        tf_kwargs = {
+            "output_hidden_states": (hidden_layer is not None),
+            "return_dict": True
+        }
+        if padding_mask.any():
+             tf_kwargs["attention_mask"] = attention_mask
+
+        # 7) Run HuBERT encoder on syllable embeddings with optional masking
+        encoder_output = self.transformer(proj, **tf_kwargs)
+        if not tf_kwargs["output_hidden_states"]:
+            x = encoder_output.last_hidden_state        # (B, max_syll, hidden_size)
+        else:
+            return encoder_output.hidden_states[hidden_layer][0]
+        
         x = self.layer_norm(x)
         # 7) Final projection per utterance per utterance
         outputs = []
         for b in range(B):
-            L = (~mask[b]).sum().item()
+            L = (~padding_mask[b]).sum().item()
             logits = self.projection(x[b, :L])             # (L, vocab_size)
             outputs.append(logits)
         return outputs
