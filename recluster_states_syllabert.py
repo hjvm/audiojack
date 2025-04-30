@@ -189,6 +189,6 @@ if __name__ == '__main__':
     # parser.add_argument('--stage', type=int, required=True)
     args = parser.parse_args()
 
-    #extract_hidden_states(args)  # You can skip this if the model is not further trained.
+    extract_hidden_states(args)  # You can skip this if the model is not further trained.
     cluster_hidden_states(args)
 

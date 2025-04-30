@@ -76,17 +76,18 @@ class SyllaBERTEncoder(nn.Module):
         # 6) Configure transformer kwargs
         tf_kwargs = {
             "output_hidden_states": (hidden_layer is not None),
-            "return_dict": True
+            "return_dict": False
         }
         if padding_mask.any():
              tf_kwargs["attention_mask"] = attention_mask
 
         # 7) Run HuBERT encoder on syllable embeddings with optional masking
         encoder_output = self.transformer(proj, **tf_kwargs)
+        # tuple format: (last_hidden_state, hidden_states, ...)
         if not tf_kwargs["output_hidden_states"]:
-            x = encoder_output.last_hidden_state        # (B, max_syll, hidden_size)
+            x = encoder_output[0] # (B, max_syll, hidden_size)
         else:
-            return encoder_output.hidden_states[hidden_layer][0]
+            return encoder_output[1][hidden_layer][0]
         
         x = self.layer_norm(x)
         # 7) Final projection per utterance per utterance
