@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from findsylls import segment_audio  # assumes your segmentation function is imported from findsylls.py
 
-def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13):
+def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13, include_delta=True, include_ddelta=True):
     utterance_id = os.path.splitext(os.path.basename(audio_file))[0]
     #speaker_id = audio_file.split("/")[-3]
     #chapter_id = audio_file.split("/")[-2]
@@ -53,9 +53,18 @@ def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13
             width = n_frames if (n_frames % 2 == 1) else max(n_frames - 1, 1)
         else:
             width = default_width
-        mfcc_delta  = librosa.feature.delta(mfcc_raw, order=1, width=width)
-        mfcc_delta2 = librosa.feature.delta(mfcc_raw, order=2, width=width)        # stack to (3*n_mfcc, T) = (39, T) when n_mfcc=13
-        mfcc_all = np.vstack([mfcc_raw, mfcc_delta, mfcc_delta2])
+        # compute delta and delta-delta
+        mfcc_vstack = [mfcc_raw]
+        if include_delta:
+            mfcc_vstack.append(librosa.feature.delta(mfcc_raw, order=1, width=width))
+        if include_ddelta:
+            mfcc_vstack.append(librosa.feature.delta(mfcc_raw, order=2, width=width))
+        #mfcc_delta  = librosa.feature.delta(mfcc_raw, order=1, width=width)
+        #mfcc_delta2 = librosa.feature.delta(mfcc_raw, order=2, width=width)        # stack to (3*n_mfcc, T) = (39, T) when n_mfcc=13
+        if len(mfcc_vstack) > 1:
+            mfcc_all = np.vstack(mfcc_vstack)  # shape (3*n_mfcc, T)
+        else:
+            mfcc_all = mfcc_raw
         # mean over time axis → (3*n_mfcc,)
         mfcc_mean = mfcc_all.mean(axis=1)
         mfcc_vectors.append(mfcc_mean)
@@ -86,6 +95,12 @@ def main():
     parser.add_argument("--n_mfcc", type=int, 
                         default=13, 
                         help="Number of MFCC coefficients")
+    parser.add_argument("--include_delta", type=bool, 
+                        default=True, 
+                        help="Include first order MFCC delta coefficients")
+    parser.add_argument("--include_ddelta", type=bool, 
+                        default=True, 
+                        help="Include second order MFCC delta coefficients")
     parser.add_argument("--samplerate", type=int, 
                         default=16000, 
                         help="Sampling rate")
@@ -104,7 +119,9 @@ def main():
             audio_file=file,
             output_dir=args.output_dir,
             samplerate=args.samplerate,
-            n_mfcc=args.n_mfcc
+            n_mfcc=args.n_mfcc,
+            include_delta=args.include_delta,
+            include_ddelta=args.include_ddelta
         ) 
         if not result:
             continue

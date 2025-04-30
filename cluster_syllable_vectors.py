@@ -19,6 +19,7 @@ import json
 import joblib
 import numpy as np
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 def main():
@@ -51,6 +52,10 @@ def main():
     vectors = np.load(args.vectors_file)  # shape: (N, 39)
     print(f"Loaded MFCC vectors shape: {vectors.shape}")
     
+    # Standardize the vectors
+    print("Standardizing MFCC vectors...")
+    vectors = StandardScaler().fit_transform(vectors)
+
     # Run k-means
     print(f"Running k-means with k={args.n_clusters} on {vectors.shape[0]} syllable vectors...")
     kmeans = KMeans(n_clusters=args.n_clusters, random_state=42, n_init="auto")
