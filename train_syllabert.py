@@ -16,6 +16,7 @@ from datetime import datetime
 from loguru import logger
 import os
 import re
+from torch import nn
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -40,6 +41,13 @@ def load_latest_checkpoint(checkpoint_dir):
     return path, latest_epoch
 
 
+def has_nan_or_inf(model):
+    for param in model.parameters():
+        if param.grad is not None:
+            if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                return True
+    return False
+    
 def train(args):
     device = get_device()
     # instantiate model: only hubert_pretrained_model arg
@@ -75,16 +83,17 @@ def train(args):
     # The commented code below is to freeze the convolution layers. 
     # But setting this seems to unstable the training as causes Nan loss/gradient so I commented these.
     # ================================================================================================
-    # for param in model.feature_extractor.parameters():
-    #     param.requires_grad = False
-    # optimizer = torch.optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()), 
-    #     lr=args.lr, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.01
-    # )
+    for param in model.feature_extractor.parameters():
+        param.requires_grad = False
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(
-        model.parameters(), 
+        trainable_params, 
         lr=args.lr, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.01
     )
+    # optimizer = torch.optim.Adam(
+    #     model.parameters(), 
+    #     lr=args.lr, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.01
+    # )
 
 
     log_interval = 50
@@ -141,8 +150,13 @@ def train(args):
 
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-                optimizer.step()
+                if has_nan_or_inf(model):
+                    logger.info("NaN detected in gradients — skipping optimizer step")
+                    optimizer.zero_grad()
+                else:
+                    optimizer.step()
+                    torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=10.0)
+                    optimizer.zero_grad()
 
                 steps += 1
 
@@ -186,7 +200,7 @@ if __name__ == '__main__':
     parser.add_argument('--sr', type=int, default=16000)
     parser.add_argument('--hubert_model', type=str, default='facebook/hubert-base-ls960')
     parser.add_argument('--bs', type=int, default=8)
-    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--epochs', type=int, default=35)
     parser.add_argument('--out_dir', type=str, default='checkpoints')
     parser.add_argument('-c', action='store_true', help='continue training')

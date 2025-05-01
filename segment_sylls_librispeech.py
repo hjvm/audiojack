@@ -84,7 +84,7 @@ def process_librispeech_file(audio_file, output_dir, samplerate=16000, n_mfcc=13
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--librispeech_root", type=str,
-                         default="data/LibriSpeech/train-clean-100",
+                         default="data/LibriSpeech/train-clean-100",                                          
                          help="Path to LibriSpeech split root")
     parser.add_argument("--output_dir", type=str,
                         default="data/syllabert_clean100/features",
