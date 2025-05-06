@@ -98,6 +98,9 @@ def train(args):
 
     log_interval = 50
 
+    weight = torch.load("data/syllabert_clean100/clustering/cluster_weights.pt").to(device)
+    loss_fn = nn.CrossEntropyLoss(weight=weight, ignore_index=-100)
+
     for epoch in range(1 + epoch_n, args.epochs + 1 + epoch_n):
         logger.info(f"Epoch {epoch}/{args.epochs + 1 + epoch_n}")
         model.train()
@@ -137,7 +140,8 @@ def train(args):
                 # flatten and compute loss
                 all_logits = torch.cat(logits_list, dim=0)
 
-                loss = F.cross_entropy(all_logits, targets, ignore_index=-100)
+                # loss = F.cross_entropy(all_logits, targets, ignore_index=-100)
+                loss = loss_fn(all_logits, targets)
                 if torch.isnan(loss):
                     logger.error(f"Loss: {loss.item()}")
                     logger.error(f"Any NaN in logits: {torch.isnan(all_logits).any()}")

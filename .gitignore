@@ -201,3 +201,6 @@ outputs/
 *.tmp
 *.log
 .DS_Store
+
+hubert-ctc-syllable/
+sandbox*
